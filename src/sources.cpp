@@ -30,6 +30,36 @@ BrushState &brush()
 	return b;
 }
 
+void readBrush(obs_data_t *d, BrushState &b)
+{
+	b.color = QColor::fromRgb(QRgb(obs_data_get_int(d, "color")));
+	b.tool = int(obs_data_get_int(d, "tool")) % ToolCount;
+	b.style = int(obs_data_get_int(d, "style"));
+	b.stamp = int(obs_data_get_int(d, "stamp"));
+	b.size = float(obs_data_get_double(d, "size"));
+	b.opacity = float(obs_data_get_double(d, "opacity"));
+	b.smoothing = float(obs_data_get_double(d, "smoothing"));
+	b.fade = float(obs_data_get_double(d, "fade"));
+	b.pressure = obs_data_get_bool(d, "pressure");
+	b.fill = obs_data_get_bool(d, "fill");
+	if (b.tool == Image)
+		b.tool = Pen;
+}
+
+void writeBrush(obs_data_t *d, const BrushState &b)
+{
+	obs_data_set_int(d, "color", b.color.rgb());
+	obs_data_set_int(d, "tool", b.tool);
+	obs_data_set_int(d, "style", b.style);
+	obs_data_set_int(d, "stamp", b.stamp);
+	obs_data_set_double(d, "size", b.size);
+	obs_data_set_double(d, "opacity", b.opacity);
+	obs_data_set_double(d, "smoothing", b.smoothing);
+	obs_data_set_double(d, "fade", b.fade);
+	obs_data_set_bool(d, "pressure", b.pressure);
+	obs_data_set_bool(d, "fill", b.fill);
+}
+
 static const char *SourceId = "sketch_source", *FilterId = "sketch_filter";
 
 Canvas *canvasOf(obs_source_t *s)

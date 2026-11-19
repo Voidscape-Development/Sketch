@@ -58,9 +58,13 @@ static void registerHotkeys()
 	for (int i = 0; i < ToolCount; i++)
 		add(tools[i].id,
 		    (std::string(Str("Sketch")) + ": " + Str((std::string("Tool.") + tools[i].id).c_str())).c_str(), i);
-	add("undo", (std::string(Str("Sketch")) + ": " + Str("Undo")).c_str(), ToolCount);
-	add("redo", (std::string(Str("Sketch")) + ": " + Str("Redo")).c_str(), ToolCount + 1);
-	add("clear", (std::string(Str("Sketch")) + ": " + Str("Clear")).c_str(), ToolCount + 2);
+	add("undo", (std::string(Str("Sketch")) + ": " + Str("Undo")).c_str(), Undo);
+	add("redo", (std::string(Str("Sketch")) + ": " + Str("Redo")).c_str(), Redo);
+	add("clear", (std::string(Str("Sketch")) + ": " + Str("Clear")).c_str(), ClearCanvas);
+	for (int i = 0; i < PresetHotkeys; i++)
+		add("preset" + std::to_string(i + 1),
+		    (std::string(Str("Sketch")) + ": " + Str("Preset") + " " + std::to_string(i + 1)).c_str(),
+		    FirstPreset + i);
 }
 
 static void frontendEvent(obs_frontend_event e, void *)

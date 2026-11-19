@@ -1,6 +1,7 @@
 #pragma once
 #include "common.hpp"
 #include <QWidget>
+#include <vector>
 
 class QComboBox;
 class QToolBar;
@@ -45,7 +46,7 @@ class Panel : public QWidget {
 public:
 	explicit Panel(QWidget *dockHost);
 	~Panel() override;
-	void action(int a); // tool index, or ToolCount + {0 undo, 1 redo, 2 clear}
+	void action(int a); // a Tool or an Action
 	void refreshTargets();
 
 protected:
@@ -55,6 +56,10 @@ protected:
 private:
 	void buildSettings();
 	void updateIcons();
+	void loadPresets();
+	void savePresets();
+	void applyPreset(int i);
+	void buildPresetMenu();
 	void setWindowMode(bool on);
 	void selectTool(int t);
 	void targetChanged();
@@ -68,11 +73,14 @@ private:
 	QComboBox *target = nullptr, *bgBox = nullptr;
 	QToolBar *toolbar = nullptr;
 	QAction *toolActs[ToolCount] = {}, *moreAct = nullptr;
-	QToolButton *undoBtn = nullptr, *redoBtn = nullptr, *popBtn = nullptr, *setBtn = nullptr, *colorBtn = nullptr;
+	QToolButton *undoBtn = nullptr, *redoBtn = nullptr, *popBtn = nullptr, *setBtn = nullptr, *colorBtn = nullptr,
+		    *presetBtn = nullptr;
 	QSlider *size = nullptr;
 	QLabel *sizeLbl = nullptr;
 	QCheckBox *remoteOn = nullptr;
 	QLineEdit *remoteUrl = nullptr;
 	DrawView *view = nullptr;
 	bool more = false;
+	std::vector<std::function<void()>> syncers; // refresh controls from brush()
+	std::vector<std::pair<QString, BrushState>> presets;
 };

@@ -48,6 +48,12 @@ struct BrushState {
 	QImage image; // Image tool
 };
 BrushState &brush();
+void readBrush(obs_data_t *d, BrushState &b);
+void writeBrush(obs_data_t *d, const BrushState &b);
+
+// Panel actions beyond tool indices (also used by hotkeys)
+enum Action { Undo = ToolCount, Redo, ClearCanvas, FirstPreset };
+constexpr int PresetHotkeys = 9;
 
 class Canvas;
 Canvas *canvasOf(obs_source_t *owner);             // owner = Sketch source or Sketch filter

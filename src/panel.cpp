@@ -5,6 +5,7 @@
 #ifdef __linux__
 #include <obs-nix-platform.h>
 #endif
+#include <algorithm>
 #include <QActionGroup>
 #include <QApplication>
 #include <QCheckBox>
@@ -17,6 +18,7 @@
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPlatformSurfaceEvent>
@@ -34,7 +36,7 @@ namespace {
 const char *UndoIcon = "M9 14L4 9l5-5 M4 9h10a6 6 0 010 12h-3", *RedoIcon = "M15 14l5-5-5-5 M20 9H10a6 6 0 000 12h3",
 	   *PopIcon = "M14 4h6v6 M20 4l-8 8 M18 14v6H4V6h6", *DockIcon = "M14 10l6-6 M4 14h6v6 M10 14l-6 6 M20 10h-6V4",
 	   *SettingsIcon = "M4 7h10 M18 7h2 M4 17h2 M10 17h10 M16 5v4 M8 15v4",
-	   *MoreIcon = "M5 12h.01 M12 12h.01 M19 12h.01";
+	   *MoreIcon = "M5 12h.01 M12 12h.01 M19 12h.01", *PresetIcon = "M6 4h12v16l-6-4-6 4z";
 const QColor swatches[] = {QColor(0x8e, 0xa6, 0xff), QColor(0xed, 0xed, 0xed), QColor(0xff, 0xb8, 0x6b),
 			   QColor(0x7c, 0xf2, 0xc8), QColor(0xff, 0x7a, 0xb6), QColor(0xff, 0x5a, 0x5f)};
 
@@ -236,20 +238,9 @@ Panel::Panel(QWidget *host) : QWidget(host), dockHost(host)
 {
 	BrushState &b = brush();
 	obs_data_t *cfg = config();
-	if (obs_data_has_user_value(cfg, "color")) {
-		b.color = QColor::fromRgb(QRgb(obs_data_get_int(cfg, "color")));
-		b.tool = int(obs_data_get_int(cfg, "tool")) % ToolCount;
-		b.style = int(obs_data_get_int(cfg, "style"));
-		b.stamp = int(obs_data_get_int(cfg, "stamp"));
-		b.size = float(obs_data_get_double(cfg, "size"));
-		b.opacity = float(obs_data_get_double(cfg, "opacity"));
-		b.smoothing = float(obs_data_get_double(cfg, "smoothing"));
-		b.fade = float(obs_data_get_double(cfg, "fade"));
-		b.pressure = obs_data_get_bool(cfg, "pressure");
-		b.fill = obs_data_get_bool(cfg, "fill");
-	}
-	if (b.tool == Image)
-		b.tool = Pen;
+	if (obs_data_has_user_value(cfg, "color"))
+		readBrush(cfg, b);
+	loadPresets();
 
 	root = new QVBoxLayout(this);
 	root->setContentsMargins(8, 8, 8, 8);
@@ -276,8 +267,8 @@ Panel::Panel(QWidget *host) : QWidget(host), dockHost(host)
 		top->addWidget(btn);
 		return btn;
 	};
-	undoBtn = button("Undo", [this] { action(ToolCount); });
-	redoBtn = button("Redo", [this] { action(ToolCount + 1); });
+	undoBtn = button("Undo", [this] { action(Undo); });
+	redoBtn = button("Redo", [this] { action(Redo); });
 	popBtn = button("PopOut", [this] { setWindowMode(!window); });
 	setBtn = button("Settings", [this](bool on) { settings->setVisible(on); });
 	setBtn->setCheckable(true);
@@ -327,6 +318,13 @@ Panel::Panel(QWidget *host) : QWidget(host), dockHost(host)
 		}
 	});
 	bottom->addWidget(colorBtn);
+	presetBtn = new QToolButton;
+	presetBtn->setAutoRaise(true);
+	presetBtn->setToolTip(Str("Presets"));
+	presetBtn->setPopupMode(QToolButton::InstantPopup);
+	presetBtn->setMenu(new QMenu(presetBtn));
+	connect(presetBtn->menu(), &QMenu::aboutToShow, this, &Panel::buildPresetMenu);
+	bottom->addWidget(presetBtn);
 	bottom->addSpacing(8);
 	size = new QSlider(Qt::Horizontal);
 	size->setRange(1, 64);
@@ -338,12 +336,14 @@ Panel::Panel(QWidget *host) : QWidget(host), dockHost(host)
 		brush().size = float(v);
 		sizeLbl->setNum(v);
 	});
+	syncers.push_back([this] { size->setValue(int(brush().size)); });
 	bottom->addWidget(size, 1);
 	bottom->addWidget(sizeLbl);
 	root->addLayout(bottom);
 
 	updateIcons();
-	syncColor();
+	for (auto &sync : syncers)
+		sync();
 	selectTool(b.tool);
 	refreshTargets();
 	for (auto s : sourceSignals)
@@ -356,18 +356,9 @@ Panel::~Panel()
 {
 	for (auto s : sourceSignals)
 		signal_handler_disconnect(obs_get_signal_handler(), s, queueRefresh, this);
-	const BrushState &b = brush();
 	obs_data_t *cfg = config();
-	obs_data_set_int(cfg, "color", b.color.rgb());
-	obs_data_set_int(cfg, "tool", b.tool);
-	obs_data_set_int(cfg, "style", b.style);
-	obs_data_set_int(cfg, "stamp", b.stamp);
-	obs_data_set_double(cfg, "size", b.size);
-	obs_data_set_double(cfg, "opacity", b.opacity);
-	obs_data_set_double(cfg, "smoothing", b.smoothing);
-	obs_data_set_double(cfg, "fade", b.fade);
-	obs_data_set_bool(cfg, "pressure", b.pressure);
-	obs_data_set_bool(cfg, "fill", b.fill);
+	writeBrush(cfg, brush());
+	savePresets();
 	obs_data_set_bool(cfg, "window_mode", window != nullptr);
 	if (window)
 		obs_data_set_string(cfg, "window_geom", window->saveGeometry().toBase64().constData());
@@ -376,33 +367,31 @@ Panel::~Panel()
 
 void Panel::buildSettings()
 {
-	BrushState &b = brush();
 	settings = new QWidget;
 	settings->hide();
 	auto form = new QFormLayout(settings);
 	form->setContentsMargins(4, 0, 4, 0);
-	auto slider = [&](const char *label, int lo, int hi, float val, std::function<void(int)> fn) {
+	auto slider = [&](const char *label, int lo, int hi, float (*val)(), void (*fn)(int)) {
 		auto s = new QSlider(Qt::Horizontal);
 		s->setRange(lo, hi);
-		s->setValue(int(val));
 		connect(s, &QSlider::valueChanged, this, fn);
+		syncers.push_back([s, val] { s->setValue(int(val() * 100)); });
 		form->addRow(Str(label), s);
 	};
-	slider("Opacity", 5, 100, b.opacity * 100, [](int v) { brush().opacity = v / 100.f; });
-	slider("Smoothing", 0, 100, b.smoothing * 100, [](int v) { brush().smoothing = v / 100.f; });
-	auto check = [&](const char *label, bool val, std::function<void(bool)> fn) {
+	slider("Opacity", 5, 100, [] { return brush().opacity; }, [](int v) { brush().opacity = v / 100.f; });
+	slider("Smoothing", 0, 100, [] { return brush().smoothing; }, [](int v) { brush().smoothing = v / 100.f; });
+	auto check = [&](const char *label, bool BrushState::*field) {
 		auto c = new QCheckBox;
-		c->setChecked(val);
-		connect(c, &QCheckBox::toggled, this, fn);
+		connect(c, &QCheckBox::toggled, this, [field](bool v) { brush().*field = v; });
+		syncers.push_back([c, field] { c->setChecked(brush().*field); });
 		form->addRow(Str(label), c);
-		return c;
 	};
-	check("PenPressure", b.pressure, [](bool v) { brush().pressure = v; });
-	check("FillShapes", b.fill, [](bool v) { brush().fill = v; });
+	check("PenPressure", &BrushState::pressure);
+	check("FillShapes", &BrushState::fill);
 	auto style = new QComboBox;
 	for (int i = 0; i < 3; i++)
 		style->addItem(Str(("Style." + std::to_string(i)).c_str()));
-	style->setCurrentIndex(b.style);
+	syncers.push_back([style] { style->setCurrentIndex(brush().style); });
 	connect(style, &QComboBox::currentIndexChanged, this, [](int i) { brush().style = i; });
 	form->addRow(Str("Style"), style);
 	auto fade = new QDoubleSpinBox;
@@ -410,13 +399,13 @@ void Panel::buildSettings()
 	fade->setSingleStep(.5);
 	fade->setSuffix(" s");
 	fade->setSpecialValueText(Str("Off"));
-	fade->setValue(b.fade);
+	syncers.push_back([fade] { fade->setValue(brush().fade); });
 	connect(fade, &QDoubleSpinBox::valueChanged, this, [](double v) { brush().fade = float(v); });
 	form->addRow(Str("FadeStrokes"), fade);
 	auto stamp = new QComboBox;
 	for (int i = 0; i < stampCount; i++)
 		stamp->addItem(QString::fromUtf8(stamps[i]));
-	stamp->setCurrentIndex(b.stamp % stampCount);
+	syncers.push_back([stamp] { stamp->setCurrentIndex(brush().stamp % stampCount); });
 	connect(stamp, &QComboBox::currentIndexChanged, this, [](int i) { brush().stamp = i; });
 	form->addRow(Str("Tool.Stamp"), stamp);
 	bgBox = new QComboBox;
@@ -464,7 +453,7 @@ void Panel::buildSettings()
 		if (!f.isEmpty())
 			withCanvas([&](Canvas *c) { c->exportImage().save(f, "PNG"); });
 	});
-	push("Clear", [this] { action(ToolCount + 2); });
+	push("Clear", [this] { action(ClearCanvas); });
 	form->addRow(Str("Canvas"), canvasRow);
 	root->addWidget(settings);
 }
@@ -480,6 +469,7 @@ void Panel::updateIcons()
 	popBtn->setIcon(svgIcon(window ? DockIcon : PopIcon, c));
 	popBtn->setToolTip(Str(window ? "Dock" : "PopOut"));
 	setBtn->setIcon(svgIcon(SettingsIcon, c));
+	presetBtn->setIcon(svgIcon(PresetIcon, c));
 	syncColor();
 }
 
@@ -525,14 +515,105 @@ void Panel::action(int a)
 {
 	if (a < ToolCount)
 		return selectTool(a);
+	if (a >= FirstPreset)
+		return applyPreset(a - FirstPreset);
 	withCanvas([a](Canvas *c) {
-		if (a == ToolCount)
+		if (a == Undo)
 			c->undo();
-		else if (a == ToolCount + 1)
+		else if (a == Redo)
 			c->redo();
 		else
 			c->clear();
 	});
+}
+
+void Panel::loadPresets()
+{
+	OBSDataArrayAutoRelease arr = obs_data_get_array(config(), "presets");
+	if (!arr) { // first run: a few useful defaults
+		auto add = [this](const char *name, int tool, QRgb color, float size, int style = Solid) {
+			BrushState b;
+			b.tool = tool;
+			b.color = QColor::fromRgb(color);
+			b.size = size;
+			b.style = style;
+			presets.push_back({Str(name), b});
+		};
+		add("Preset.Fineliner", Pen, 0xededed, 2);
+		add("Preset.Marker", Pen, 0xffb86b, 10);
+		add("Preset.Highlight", Highlighter, 0xffe55c, 10);
+		add("Preset.Neon", Pen, 0x7cf2c8, 6, Glow);
+		add("Preset.Dashed", Pen, 0xff7ab6, 4, Dashed);
+		add("Preset.Laser", Laser, 0xff5a5f, 6);
+		return;
+	}
+	for (size_t i = 0; i < obs_data_array_count(arr); i++) {
+		OBSDataAutoRelease d = obs_data_array_item(arr, i);
+		BrushState b;
+		readBrush(d, b);
+		presets.push_back({QString::fromUtf8(obs_data_get_string(d, "name")), b});
+	}
+}
+
+void Panel::savePresets()
+{
+	OBSDataArrayAutoRelease arr = obs_data_array_create();
+	for (auto &[name, b] : presets) {
+		OBSDataAutoRelease d = obs_data_create();
+		obs_data_set_string(d, "name", name.toUtf8().constData());
+		writeBrush(d, b);
+		obs_data_array_push_back(arr, d);
+	}
+	obs_data_set_array(config(), "presets", arr);
+	saveConfig();
+}
+
+void Panel::applyPreset(int i)
+{
+	if (i < 0 || i >= int(presets.size()))
+		return;
+	const QImage image = brush().image;
+	brush() = presets[size_t(i)].second;
+	brush().image = image;
+	for (auto &sync : syncers)
+		sync();
+	syncColor();
+	selectTool(brush().tool);
+}
+
+void Panel::buildPresetMenu()
+{
+	QMenu *m = presetBtn->menu();
+	m->clear();
+	for (int i = 0; i < int(presets.size()); i++) {
+		auto &[name, b] = presets[size_t(i)];
+		m->addAction(dotIcon(b.color), name, this, [this, i] { applyPreset(i); });
+	}
+	m->addSeparator();
+	m->addAction(Str("SavePreset"), this, [this] {
+		bool ok = false;
+		const QString name =
+			QInputDialog::getText(this, Str("SavePreset"), Str("PresetName"), QLineEdit::Normal,
+					      Str(("Tool." + std::string(tools[brush().tool].id)).c_str()), &ok)
+				.trimmed();
+		if (!ok || name.isEmpty())
+			return;
+		BrushState b = brush();
+		b.image = {};
+		auto it = std::find_if(presets.begin(), presets.end(), [&](auto &p) { return p.first == name; });
+		if (it != presets.end())
+			it->second = b;
+		else
+			presets.push_back({name, b});
+		savePresets();
+	});
+	QMenu *del = m->addMenu(Str("DeletePreset"));
+	del->setEnabled(!presets.empty());
+	for (int i = 0; i < int(presets.size()); i++)
+		del->addAction(presets[size_t(i)].first, this, [this, i] {
+			presets.erase(presets.begin() + i);
+			savePresets();
+		});
 }
 
 void Panel::refreshTargets()

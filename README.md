@@ -14,11 +14,13 @@ draw from a phone or tablet in any browser on your network.
   laser pointer and image under **More tools**.
 - **Brush options:** color swatches and custom colors, size, opacity, smoothing, pen pressure (tablet eraser end is
   detected), solid / dashed / glow styles, filled shapes, and strokes that fade out after a delay.
+- **Brush presets:** save the current tool and brush settings under a name and switch back from the preset menu
+  next to the colors. Comes with Fineliner, Marker, Highlight, Neon, Dashed and Laser; presets 1–9 have hotkeys.
 - **Canvas:** undo/redo, clear, import an image, export PNG. Drawings are saved with the scene collection (optional) and
   can clear automatically on scene switch.
 - **Remote drawing:** enable it in the dock's settings and open the shown URL on a phone or tablet on the same network.
   The page shows a live snapshot of the target and supports pen pressure. Access needs the token in the URL.
-- **Hotkeys:** every tool, undo, redo and clear are assignable in *Settings → Hotkeys*.
+- **Hotkeys:** every tool, presets 1–9, undo, redo and clear are assignable in *Settings → Hotkeys*.
 - Uses standard OBS widgets, so it follows the active OBS theme.
 
 ## Usage
