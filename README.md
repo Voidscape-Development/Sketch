@@ -1,59 +1,50 @@
-# OBS Plugin Template
+# Sketch
 
-## Introduction
+Drawing and annotation for OBS Studio 33+, by Voidscape Development.
 
-The plugin template is meant to be used as a starting point for OBS Studio plugin development. It includes:
+Sketch adds a **Sketch Canvas** source and a **Sketch** filter, plus a **Sketch** dock where you draw on a live view of the
+target. The dock pops out into its own window (tools move into the top bar) and docks back with one click. You can also
+draw from a phone or tablet in any browser on your network.
 
-* Boilerplate plugin source code
-* A CMake project file
-* GitHub Actions workflows and repository actions
+## Features
 
-## Supported Build Environments
+- **Targets:** a standalone *Sketch Canvas* source (transparent, whiteboard, chalkboard or grid background) or the
+  *Sketch* filter on any source (draw over a webcam, game capture, etc.).
+- **Tools:** pen, brush, highlighter, eraser, line, arrow, rectangle, ellipse, text, plus stamps, fill, blur, pixelate,
+  laser pointer and image under **More tools**.
+- **Brush options:** color swatches and custom colors, size, opacity, smoothing, pen pressure (tablet eraser end is
+  detected), solid / dashed / glow styles, filled shapes, and strokes that fade out after a delay.
+- **Brush presets:** save the current tool and brush settings under a name and switch back from the preset menu
+  next to the colors. Comes with Fineliner, Marker, Highlight, Neon, Dashed and Laser; presets 1–9 have hotkeys.
+- **Canvas:** undo/redo, clear, import an image, export PNG. Drawings are saved with the scene collection (optional) and
+  can clear automatically on scene switch.
+- **Remote drawing:** enable it in the dock's settings and open the shown URL on a phone or tablet on the same network.
+  The page shows a live snapshot of the target and supports pen pressure. Access needs the token in the URL.
+- **Hotkeys:** every tool, presets 1–9, undo, redo and clear are assignable in *Settings → Hotkeys*.
+- Uses standard OBS widgets, so it follows the active OBS theme.
 
-| Platform  | Tool   |
-|-----------|--------|
-| Windows   | Visual Studio 17 2022 |
-| macOS     | XCode 16.0 |
-| Windows, macOS  | CMake 3.30.5 |
-| Ubuntu 24.04 | CMake 3.28.3 |
-| Ubuntu 24.04 | `ninja-build` |
-| Ubuntu 24.04 | `pkg-config`
-| Ubuntu 24.04 | `build-essential` |
+## Usage
 
-## Quick Start
+1. Add a **Sketch Canvas** source to a scene, or add the **Sketch** filter to an existing source.
+2. Open **Docks → Sketch**, pick the target in the dropdown, and draw.
+3. Use the pop-out button to move the panel into its own window; close the window or press the dock button to return it.
 
-An absolute bare-bones [Quick Start Guide](https://github.com/obsproject/obs-plugintemplate/wiki/Quick-Start-Guide) is available in the wiki.
+Notes:
 
-## Documentation
+- Blur and pixelate on the **filter** affect the source underneath; on the **Sketch Canvas** source they affect the
+  drawing itself.
+- Remote drawing uses plain HTTP on your LAN (default port 4477). Keep the URL private; anyone with it can draw.
 
-All documentation can be found in the [Plugin Template Wiki](https://github.com/obsproject/obs-plugintemplate/wiki).
+## Building
 
-Suggested reading to get up and running:
+Built with the standard [OBS plugin template](https://github.com/obsproject/obs-plugintemplate) tooling. Requires Qt 6
+(Core, Widgets, Network, Svg) and obs-frontend-api; the dependency versions are pinned in `buildspec.json`.
 
-* [Getting started](https://github.com/obsproject/obs-plugintemplate/wiki/Getting-Started)
-* [Build system requirements](https://github.com/obsproject/obs-plugintemplate/wiki/Build-System-Requirements)
-* [Build system options](https://github.com/obsproject/obs-plugintemplate/wiki/CMake-Build-System-Options)
+```sh
+cmake --preset windows-x64
+cmake --build --preset windows-x64
+```
 
-## GitHub Actions & CI
+## License
 
-Default GitHub Actions workflows are available for the following repository actions:
-
-* `push`: Run for commits or tags pushed to `master` or `main` branches.
-* `pr-pull`: Run when a Pull Request has been pushed or synchronized.
-* `dispatch`: Run when triggered by the workflow dispatch in GitHub's user interface.
-* `build-project`: Builds the actual project and is triggered by other workflows.
-* `check-format`: Checks CMake and plugin source code formatting and is triggered by other workflows.
-
-The workflows make use of GitHub repository actions (contained in `.github/actions`) and build scripts (contained in `.github/scripts`) which are not needed for local development, but might need to be adjusted if additional/different steps are required to build the plugin.
-
-### Retrieving build artifacts
-
-Successful builds on GitHub Actions will produce build artifacts that can be downloaded for testing. These artifacts are commonly simple archives and will not contain package installers or installation programs.
-
-### Building a Release
-
-To create a release, an appropriately named tag needs to be pushed to the `main`/`master` branch using semantic versioning (e.g., `12.3.4`, `23.4.5-beta2`). A draft release will be created on the associated repository with generated installer packages or installation programs attached as release artifacts.
-
-## Signing and Notarizing on macOS
-
-Basic concepts of codesigning and notarization on macOS are explained in the correspodning [Wiki article](https://github.com/obsproject/obs-plugintemplate/wiki/Codesigning-On-macOS) which has a specific section for the [GitHub Actions setup](https://github.com/obsproject/obs-plugintemplate/wiki/Codesigning-On-macOS#setting-up-code-signing-for-github-actions).
+GPL-2.0-or-later. See [LICENSE](LICENSE).
