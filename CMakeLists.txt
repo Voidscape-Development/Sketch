@@ -26,7 +26,8 @@ target_compile_options(
 )
 set_target_properties(
   ${CMAKE_PROJECT_NAME}
-  PROPERTIES AUTOMOC ON AUTOUIC ON AUTORCC ON
+  # Xcode script phases export several deployment targets that break moc's clang predefines probe
+  PROPERTIES AUTOMOC ON AUTOUIC ON AUTORCC ON AUTOMOC_COMPILER_PREDEFINES OFF
 )
 
 target_sources(
