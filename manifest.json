@@ -1,15 +1,17 @@
 {
-    "display_name": "Plugin Template for OBS",
-    "id": "00000000-0000-0000-0000-000000000000",
+    "display_name": "Sketch",
+    "id": "57ed72b7-adcf-4496-9b33-ee4a008bab1d",
     "version": "1.0.0",
-    "authors": ["Your Name"],
-    "name": "plugintemplate-for-obs",
-    "description": "A plugin template to build plugins from.",
-    "long_description": "A template plugin for OBS Studio that can be used as a starting point for developing new plugins.",
+    "authors": [
+        "Voidscape Development"
+    ],
+    "name": "sketch",
+    "description": "Draw and annotate on OBS sources from a dock, a pop-out window, or a phone/tablet.",
+    "long_description": "Sketch adds a drawing canvas source and filter to OBS Studio, with a theme-following dock that pops out into its own window, pen pressure, shapes, text, stamps, fill, blur/pixelate regions, a laser pointer, and remote drawing from any browser on your network.",
     "urls": {
-        "repository": "<URL TO YOUR REPOSITORY>",
-        "website": "<URL TO YOUR WEBSITE>",
-        "support": "<URL TO YOUR SUPPORT PAGE>"
+        "repository": "https://github.com/voidscape-development/sketch",
+        "website": "https://github.com/voidscape-development/sketch",
+        "support": "https://github.com/voidscape-development/sketch/issues"
     },
     "has_banner": false,
     "has_icon": false

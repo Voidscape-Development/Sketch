@@ -1,0 +1,49 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform float2 texel;
+uniform float amount;
+
+sampler_state def {
+	Filter   = Linear;
+	AddressU = Clamp;
+	AddressV = Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v)
+{
+	VertData o;
+	o.pos = mul(float4(v.pos.xyz, 1.0), ViewProj);
+	o.uv = v.uv;
+	return o;
+}
+
+float4 PSPixelate(VertData v) : TARGET
+{
+	float2 block = texel * amount;
+	return image.Sample(def, (floor(v.uv / block) + 0.5) * block);
+}
+
+float4 PSBlur(VertData v) : TARGET
+{
+	float4 c = float4(0.0, 0.0, 0.0, 0.0);
+	float2 step = texel * amount / 4.0;
+	for (int x = -4; x <= 4; x++)
+		for (int y = -4; y <= 4; y++)
+			c += image.Sample(def, v.uv + float2(x, y) * step);
+	return c / 81.0;
+}
+
+technique Pixelate
+{
+	pass { vertex_shader = VSDefault(v); pixel_shader = PSPixelate(v); }
+}
+
+technique Blur
+{
+	pass { vertex_shader = VSDefault(v); pixel_shader = PSBlur(v); }
+}
