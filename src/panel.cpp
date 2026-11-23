@@ -19,6 +19,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPlatformSurfaceEvent>
@@ -36,7 +37,8 @@ namespace {
 const char *UndoIcon = "M9 14L4 9l5-5 M4 9h10a6 6 0 010 12h-3", *RedoIcon = "M15 14l5-5-5-5 M20 9H10a6 6 0 000 12h3",
 	   *PopIcon = "M14 4h6v6 M20 4l-8 8 M18 14v6H4V6h6", *DockIcon = "M14 10l6-6 M4 14h6v6 M10 14l-6 6 M20 10h-6V4",
 	   *SettingsIcon = "M4 7h10 M18 7h2 M4 17h2 M10 17h10 M16 5v4 M8 15v4",
-	   *MoreIcon = "M5 12h.01 M12 12h.01 M19 12h.01", *PresetIcon = "M6 4h12v16l-6-4-6 4z";
+	   *MoreIcon = "M5 12h.01 M12 12h.01 M19 12h.01", *PresetIcon = "M6 4h12v16l-6-4-6 4z",
+	   *ClearIcon = "M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13";
 const QColor swatches[] = {QColor(0x8e, 0xa6, 0xff), QColor(0xed, 0xed, 0xed), QColor(0xff, 0xb8, 0x6b),
 			   QColor(0x7c, 0xf2, 0xc8), QColor(0xff, 0x7a, 0xb6), QColor(0xff, 0x5a, 0x5f)};
 
@@ -269,6 +271,10 @@ Panel::Panel(QWidget *host) : QWidget(host), dockHost(host)
 	};
 	undoBtn = button("Undo", [this] { action(Undo); });
 	redoBtn = button("Redo", [this] { action(Redo); });
+	clearBtn = button("Clear", [this] {
+		if (QMessageBox::question(this, Str("Clear"), Str("ClearConfirm")) == QMessageBox::Yes)
+			action(ClearCanvas);
+	});
 	popBtn = button("PopOut", [this] { setWindowMode(!window); });
 	setBtn = button("Settings", [this](bool on) { settings->setVisible(on); });
 	setBtn->setCheckable(true);
@@ -453,7 +459,6 @@ void Panel::buildSettings()
 		if (!f.isEmpty())
 			withCanvas([&](Canvas *c) { c->exportImage().save(f, "PNG"); });
 	});
-	push("Clear", [this] { action(ClearCanvas); });
 	form->addRow(Str("Canvas"), canvasRow);
 	root->addWidget(settings);
 }
@@ -466,6 +471,7 @@ void Panel::updateIcons()
 	moreAct->setIcon(svgIcon(MoreIcon, c));
 	undoBtn->setIcon(svgIcon(UndoIcon, c));
 	redoBtn->setIcon(svgIcon(RedoIcon, c));
+	clearBtn->setIcon(svgIcon(ClearIcon, c));
 	popBtn->setIcon(svgIcon(window ? DockIcon : PopIcon, c));
 	popBtn->setToolTip(Str(window ? "Dock" : "PopOut"));
 	setBtn->setIcon(svgIcon(SettingsIcon, c));
