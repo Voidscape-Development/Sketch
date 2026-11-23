@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QNetworkInterface>
 #include <QRandomGenerator>
+#include <QThreadPool>
 #include <QTcpSocket>
 #include <QUrl>
 #include <QUrlQuery>
@@ -45,12 +46,6 @@ Remote::Remote()
 				Qt::QueuedConnection);
 		}
 	});
-	connect(&timer, &QTimer::timeout, this, [this] {
-		for (auto &[s, c] : clients)
-			if (c.ws)
-				return void(want = true);
-	});
-	timer.setInterval(250);
 	if (obs_data_get_bool(cfg, "remote_on"))
 		setEnabled(true);
 }
@@ -66,14 +61,12 @@ void Remote::setEnabled(bool on)
 			return;
 		}
 		obs_add_main_rendered_callback(rendered, this);
-		timer.start();
 	} else
 		shutdown();
 }
 
 void Remote::shutdown()
 {
-	timer.stop();
 	if (server.isListening())
 		obs_remove_main_rendered_callback(rendered, this);
 	server.close();
@@ -84,6 +77,7 @@ void Remote::shutdown()
 	gs_stagesurface_destroy(stage);
 	texrender = nullptr;
 	stage = nullptr;
+	staged = false;
 	obs_leave_graphics();
 }
 
@@ -174,7 +168,7 @@ void Remote::http(QTcpSocket *s, Client &c, const QByteArray &req)
 		c.ws = true;
 		c.b = brush();
 		c.b.image = {};
-		want = true;
+		c.ready = want = true;
 		return;
 	}
 	QByteArray body = "Sketch: invalid or missing access token", status = "403 Forbidden", type = "text/plain";
@@ -197,7 +191,9 @@ void Remote::message(Client &c, const QByteArray &msg)
 {
 	const QJsonObject o = QJsonDocument::fromJson(msg).object();
 	const QString t = o["t"].toString();
-	if (t == "tool")
+	if (t == "ack") // browser showed the last frame: send the next one
+		c.ready = want = true;
+	else if (t == "tool")
 		c.b.tool = qBound(0, o["v"].toInt(), int(Laser));
 	else if (t == "color")
 		c.b.color = QColor(o["v"].toString());
@@ -220,7 +216,6 @@ void Remote::message(Client &c, const QByteArray &msg)
 		cv->redo();
 	else if (t == "clear")
 		cv->clear();
-	want = true;
 }
 
 void Remote::send(QTcpSocket *s, int opcode, const QByteArray &payload)
@@ -239,14 +234,12 @@ void Remote::send(QTcpSocket *s, int opcode, const QByteArray &payload)
 	s->write(f + payload);
 }
 
-void Remote::broadcast(const QImage &shot, uint32_t w, uint32_t h)
+void Remote::broadcast(const QByteArray &jpg, uint32_t w, uint32_t h)
 {
-	QByteArray jpg;
-	QBuffer buf(&jpg);
-	shot.save(&buf, "JPG", 70);
 	const QByteArray size = QString(R"({"t":"size","w":%1,"h":%2})").arg(w).arg(h).toUtf8();
 	for (auto &[s, c] : clients)
-		if (c.ws) {
+		if (c.ws && c.ready) {
+			c.ready = false;
 			send(s, 1, size);
 			send(s, 2, jpg);
 		}
@@ -255,13 +248,27 @@ void Remote::broadcast(const QImage &shot, uint32_t w, uint32_t h)
 void Remote::rendered(void *param)
 {
 	auto r = static_cast<Remote *>(param);
-	if (!r->want.exchange(false))
+	uint8_t *data;
+	uint32_t linesize;
+	if (r->staged && gs_stagesurface_map(r->stage, &data, &linesize)) { // read last frame's copy: no GPU stall
+		r->staged = false;
+		const uint32_t tw = gs_stagesurface_get_width(r->stage), th = gs_stagesurface_get_height(r->stage);
+		QImage img = QImage(data, int(tw), int(th), int(linesize), QImage::Format_RGB32).copy();
+		gs_stagesurface_unmap(r->stage);
+		QThreadPool::globalInstance()->start([r, img = std::move(img), w = r->stagedW, h = r->stagedH] {
+			QByteArray jpg;
+			QBuffer buf(&jpg);
+			img.save(&buf, "JPG", 70);
+			QMetaObject::invokeMethod(r, [r, jpg, w, h] { r->broadcast(jpg, w, h); }, Qt::QueuedConnection);
+		});
+	}
+	if (r->staged || !r->want.exchange(false))
 		return;
 	OBSSource owner = getTarget();
 	obs_source_t *rs = owner ? renderSourceOf(owner) : nullptr;
 	const uint32_t sw = rs ? obs_source_get_width(rs) : 0, sh = rs ? obs_source_get_height(rs) : 0;
 	if (!sw || !sh)
-		return;
+		return void(r->want = true); // retry once the target has a size
 	const float s = std::min(1.f, 960.f / float(std::max(sw, sh)));
 	const uint32_t tw = std::max(1u, uint32_t(sw * s)), th = std::max(1u, uint32_t(sh * s));
 	if (!r->texrender)
@@ -282,11 +289,7 @@ void Remote::rendered(void *param)
 	if (!r->stage)
 		r->stage = gs_stagesurface_create(tw, th, GS_BGRA);
 	gs_stage_texture(r->stage, gs_texrender_get_texture(r->texrender));
-	uint8_t *data;
-	uint32_t linesize;
-	if (!gs_stagesurface_map(r->stage, &data, &linesize))
-		return;
-	const QImage img = QImage(data, int(tw), int(th), int(linesize), QImage::Format_RGB32).copy();
-	gs_stagesurface_unmap(r->stage);
-	QMetaObject::invokeMethod(r, [r, img, sw, sh] { r->broadcast(img, sw, sh); }, Qt::QueuedConnection);
+	r->staged = true;
+	r->stagedW = sw;
+	r->stagedH = sh;
 }

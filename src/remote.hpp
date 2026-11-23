@@ -2,7 +2,6 @@
 #include "common.hpp"
 #include <QObject>
 #include <QTcpServer>
-#include <QTimer>
 #include <atomic>
 #include <map>
 
@@ -22,7 +21,7 @@ private:
 	Remote();
 	struct Client {
 		QByteArray buf;
-		bool ws = false;
+		bool ws = false, ready = false; // ready: browser wants the next frame
 		int id;
 		BrushState b;
 	};
@@ -31,14 +30,15 @@ private:
 	void message(Client &c, const QByteArray &msg);
 	static void send(QTcpSocket *s, int opcode, const QByteArray &payload);
 	static void rendered(void *param);
-	void broadcast(const QImage &shot, uint32_t w, uint32_t h);
+	void broadcast(const QByteArray &jpg, uint32_t w, uint32_t h);
 
 	QTcpServer server;
-	QTimer timer;
 	std::map<QTcpSocket *, Client> clients;
 	QString token;
 	int port = 4477, nextId = 1;
 	std::atomic<bool> want{false};
 	gs_texrender_t *texrender = nullptr;
 	gs_stagesurf_t *stage = nullptr;
+	bool staged = false; // graphics thread only
+	uint32_t stagedW = 0, stagedH = 0;
 };
