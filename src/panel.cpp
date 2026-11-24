@@ -9,6 +9,7 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -440,6 +441,14 @@ void Panel::buildSettings()
 	});
 	remote->addWidget(remoteOn);
 	remote->addWidget(remoteUrl, 1);
+	auto copy = new QPushButton(Str("CopyLink")), regen = new QPushButton(Str("NewLink"));
+	connect(copy, &QPushButton::clicked, this, [this] { QApplication::clipboard()->setText(remoteUrl->text()); });
+	connect(regen, &QPushButton::clicked, this, [this] {
+		Remote::get().regenToken();
+		remoteUrl->setText(Remote::get().url());
+	});
+	remote->addWidget(copy);
+	remote->addWidget(regen);
 	form->addRow(Str("RemoteDrawing"), remote);
 
 	auto canvasRow = new QHBoxLayout;

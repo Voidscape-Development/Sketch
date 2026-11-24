@@ -22,10 +22,8 @@ Remote::Remote()
 {
 	obs_data_t *cfg = config();
 	token = obs_data_get_string(cfg, "remote_token");
-	if (token.isEmpty()) {
-		token = QString::number(QRandomGenerator::system()->generate64(), 36);
-		obs_data_set_string(cfg, "remote_token", token.toUtf8().constData());
-	}
+	if (token.isEmpty())
+		regenToken();
 	if (obs_data_has_user_value(cfg, "remote_port"))
 		port = int(obs_data_get_int(cfg, "remote_port"));
 	connect(&server, &QTcpServer::newConnection, this, [this] {
@@ -79,6 +77,14 @@ void Remote::shutdown()
 	stage = nullptr;
 	staged = false;
 	obs_leave_graphics();
+}
+
+void Remote::regenToken()
+{
+	token = QString::number(QRandomGenerator::system()->generate64(), 36);
+	obs_data_set_string(config(), "remote_token", token.toUtf8().constData());
+	for (auto &[s, c] : clients) // kick everyone holding the old link
+		s->abort();
 }
 
 QString Remote::url() const

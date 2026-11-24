@@ -15,6 +15,7 @@ public:
 	bool enabled() const { return server.isListening(); }
 	void setEnabled(bool on);
 	QString url() const;
+	void regenToken(); // new link; disconnects current clients
 	void shutdown();
 
 private:
