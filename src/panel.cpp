@@ -9,6 +9,7 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -38,7 +39,8 @@ const char *UndoIcon = "M9 14L4 9l5-5 M4 9h10a6 6 0 010 12h-3", *RedoIcon = "M15
 	   *PopIcon = "M14 4h6v6 M20 4l-8 8 M18 14v6H4V6h6", *DockIcon = "M14 10l6-6 M4 14h6v6 M10 14l-6 6 M20 10h-6V4",
 	   *SettingsIcon = "M4 7h10 M18 7h2 M4 17h2 M10 17h10 M16 5v4 M8 15v4",
 	   *MoreIcon = "M5 12h.01 M12 12h.01 M19 12h.01", *PresetIcon = "M6 4h12v16l-6-4-6 4z",
-	   *ClearIcon = "M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13";
+	   *ClearIcon = "M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13", *CopyIcon = "M9 9h11v11H9z M5 15H4V4h11v1",
+	   *RegenIcon = "M20 11a8 8 0 00-14.9-3 M4 4v4h4 M4 13a8 8 0 0014.9 3 M20 20v-4h-4";
 const QColor swatches[] = {QColor(0x8e, 0xa6, 0xff), QColor(0xed, 0xed, 0xed), QColor(0xff, 0xb8, 0x6b),
 			   QColor(0x7c, 0xf2, 0xc8), QColor(0xff, 0x7a, 0xb6), QColor(0xff, 0x5a, 0x5f)};
 
@@ -440,6 +442,19 @@ void Panel::buildSettings()
 	});
 	remote->addWidget(remoteOn);
 	remote->addWidget(remoteUrl, 1);
+	auto remoteBtn = [&](const char *tip, auto fn) {
+		auto btn = new QToolButton;
+		btn->setAutoRaise(true);
+		btn->setToolTip(Str(tip));
+		connect(btn, &QToolButton::clicked, this, fn);
+		remote->addWidget(btn);
+		return btn;
+	};
+	copyBtn = remoteBtn("CopyLink", [this] { QApplication::clipboard()->setText(remoteUrl->text()); });
+	regenBtn = remoteBtn("NewLink", [this] {
+		Remote::get().regenToken();
+		remoteUrl->setText(Remote::get().url());
+	});
 	form->addRow(Str("RemoteDrawing"), remote);
 
 	auto canvasRow = new QHBoxLayout;
@@ -476,6 +491,8 @@ void Panel::updateIcons()
 	popBtn->setToolTip(Str(window ? "Dock" : "PopOut"));
 	setBtn->setIcon(svgIcon(SettingsIcon, c));
 	presetBtn->setIcon(svgIcon(PresetIcon, c));
+	copyBtn->setIcon(svgIcon(CopyIcon, c));
+	regenBtn->setIcon(svgIcon(RegenIcon, c));
 	syncColor();
 }
 

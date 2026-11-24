@@ -74,7 +74,7 @@ private:
 	QToolBar *toolbar = nullptr;
 	QAction *toolActs[ToolCount] = {}, *moreAct = nullptr;
 	QToolButton *undoBtn = nullptr, *redoBtn = nullptr, *clearBtn = nullptr, *popBtn = nullptr, *setBtn = nullptr,
-		    *colorBtn = nullptr, *presetBtn = nullptr;
+		    *colorBtn = nullptr, *presetBtn = nullptr, *copyBtn = nullptr, *regenBtn = nullptr;
 	QSlider *size = nullptr;
 	QLabel *sizeLbl = nullptr;
 	QCheckBox *remoteOn = nullptr;
