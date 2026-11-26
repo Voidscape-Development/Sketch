@@ -20,6 +20,9 @@ const ToolInfo tools[ToolCount] = {
 	{"Pixelate", "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z"},
 	{"Laser", "M9 12a3 3 0 106 0 3 3 0 10-6 0 M12 2v3 M12 19v3 M2 12h3 M19 12h3"},
 	{"Image", "M4 5h16v14H4z M4 16l5-5 4 4 3-3 4 4"},
+	{"Spotlight", "M12 7a5 5 0 100 10 5 5 0 100-10z M4 4l3 3 M20 4l-3 3 M4 20l3-3 M20 20l-3-3"},
+	{"Step", "M12 3a9 9 0 100 18 9 9 0 100-18z M11 9l2-1v8"},
+	{"Track", "M4 8V4h4 M16 4h4v4 M20 16v4h-4 M8 20H4v-4 M12 9a3 3 0 100 6 3 3 0 100-6z"},
 };
 const char *const stamps[] = {"★", "✔", "✖", "♥", "?", "!", "➜", "●"};
 const int stampCount = int(std::size(stamps));
@@ -42,6 +45,7 @@ void readBrush(obs_data_t *d, BrushState &b)
 	b.fade = float(obs_data_get_double(d, "fade"));
 	b.pressure = obs_data_get_bool(d, "pressure");
 	b.fill = obs_data_get_bool(d, "fill");
+	b.ruler = obs_data_get_bool(d, "ruler");
 	if (b.tool == Image)
 		b.tool = Pen;
 }
@@ -58,6 +62,63 @@ void writeBrush(obs_data_t *d, const BrushState &b)
 	obs_data_set_double(d, "fade", b.fade);
 	obs_data_set_bool(d, "pressure", b.pressure);
 	obs_data_set_bool(d, "fill", b.fill);
+	obs_data_set_bool(d, "ruler", b.ruler);
+}
+
+std::vector<Preset> &presets()
+{
+	static std::vector<Preset> v = [] {
+		std::vector<Preset> r;
+		OBSDataArrayAutoRelease arr = obs_data_get_array(config(), "presets");
+		for (size_t i = 0; i < obs_data_array_count(arr); i++) {
+			OBSDataAutoRelease d = obs_data_array_item(arr, i);
+			BrushState b;
+			readBrush(d, b);
+			r.push_back({QString::fromUtf8(obs_data_get_string(d, "name")), b});
+		}
+		if (arr)
+			return r;
+		auto add = [&](const char *name, int tool, QRgb color, float size, int style = Solid) { // first run
+			BrushState b;
+			b.tool = tool;
+			b.color = QColor::fromRgb(color);
+			b.size = size;
+			b.style = style;
+			r.push_back({Str(name), b});
+		};
+		add("Preset.Fineliner", Pen, 0xededed, 2);
+		add("Preset.Marker", Pen, 0xffb86b, 10);
+		add("Preset.Highlight", Highlighter, 0xffe55c, 10);
+		add("Preset.Neon", Pen, 0x7cf2c8, 6, Glow);
+		add("Preset.Dashed", Pen, 0xff7ab6, 4, Dashed);
+		add("Preset.Laser", Laser, 0xff5a5f, 6);
+		return r;
+	}();
+	return v;
+}
+
+void savePresets()
+{
+	OBSDataArrayAutoRelease arr = obs_data_array_create();
+	for (auto &[name, b] : presets()) {
+		OBSDataAutoRelease d = obs_data_create();
+		obs_data_set_string(d, "name", name.toUtf8().constData());
+		writeBrush(d, b);
+		obs_data_array_push_back(arr, d);
+	}
+	obs_data_set_array(config(), "presets", arr);
+	saveConfig();
+}
+
+Prefs &prefs()
+{
+	static Prefs *p = [] {
+		auto r = new Prefs;
+		r->snap = obs_data_get_bool(config(), "snap");
+		r->tags = !obs_data_has_user_value(config(), "tags") || obs_data_get_bool(config(), "tags");
+		return r;
+	}();
+	return *p;
 }
 
 static const char *SourceId = "sketch_source", *FilterId = "sketch_filter";
@@ -194,7 +255,8 @@ static void filterRender(void *d, gs_effect_t *)
 		return;
 	}
 	c->resize(int(w), int(h));
-	if (c->hasRegions()) {
+	const bool regions = c->hasRegions(), tracks = c->hasTracks();
+	if (regions || tracks) {
 		if (!c->texrender)
 			c->texrender = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 		gs_texrender_reset(c->texrender);
@@ -211,7 +273,10 @@ static void filterRender(void *d, gs_effect_t *)
 		gs_effect_set_texture(gs_effect_get_param_by_name(e, "image"), t);
 		while (gs_effect_loop(e, "Draw"))
 			gs_draw_sprite(t, 0, w, h);
-		c->drawRegions(t);
+		if (regions)
+			c->drawRegions(t);
+		if (tracks)
+			c->track(t);
 	} else
 		obs_source_skip_video_filter(c->self);
 	c->draw();
