@@ -34,6 +34,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWindow>
+#include <qrcodegen.hpp>
 
 namespace {
 const char *UndoIcon = "M9 14L4 9l5-5 M4 9h10a6 6 0 010 12h-3", *RedoIcon = "M15 14l5-5-5-5 M20 9H10a6 6 0 000 12h3",
@@ -41,7 +42,8 @@ const char *UndoIcon = "M9 14L4 9l5-5 M4 9h10a6 6 0 010 12h-3", *RedoIcon = "M15
 	   *SettingsIcon = "M4 7h10 M18 7h2 M4 17h2 M10 17h10 M16 5v4 M8 15v4",
 	   *MoreIcon = "M5 12h.01 M12 12h.01 M19 12h.01", *PresetIcon = "M6 4h12v16l-6-4-6 4z",
 	   *ClearIcon = "M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13", *CopyIcon = "M9 9h11v11H9z M5 15H4V4h11v1",
-	   *RegenIcon = "M20 11a8 8 0 00-14.9-3 M4 4v4h4 M4 13a8 8 0 0014.9 3 M20 20v-4h-4";
+	   *RegenIcon = "M20 11a8 8 0 00-14.9-3 M4 4v4h4 M4 13a8 8 0 0014.9 3 M20 20v-4h-4",
+	   *GuestsIcon = "M9 11a4 4 0 100-8 4 4 0 000 8z M2 21a7 7 0 0114 0 M17 4a4 4 0 010 7 M19 15a5 5 0 013 6";
 const QColor swatches[] = {QColor(0x8e, 0xa6, 0xff), QColor(0xed, 0xed, 0xed), QColor(0xff, 0xb8, 0x6b),
 			   QColor(0x7c, 0xf2, 0xc8), QColor(0xff, 0x7a, 0xb6), QColor(0xff, 0x5a, 0x5f)};
 
@@ -57,6 +59,20 @@ QIcon svgIcon(const char *d, const QColor &c)
 	QPainter p(&pm);
 	r.render(&p);
 	return QIcon(pm);
+}
+
+QPixmap qrPixmap(const QString &text)
+{
+	const auto q = qrcodegen::QrCode::encodeText(text.toUtf8().constData(), qrcodegen::QrCode::Ecc::MEDIUM);
+	const int n = q.getSize() + 4; // 2-module quiet zone
+	QImage img(n, n, QImage::Format_RGB32);
+	img.fill(Qt::white);
+	for (int y = 0; y < q.getSize(); y++)
+		for (int x = 0; x < q.getSize(); x++)
+			if (q.getModule(x, y))
+				img.setPixel(x + 2, y + 2, 0xff000000);
+	const int s = std::max(1, 168 / n);
+	return QPixmap::fromImage(img.scaled(n * s, n * s));
 }
 
 QIcon dotIcon(const QColor &c, bool ring = false)
@@ -188,6 +204,8 @@ void DrawView::input(int phase, QPointF pos, float pr, bool eraser)
 	BrushState b = brush();
 	if (eraser)
 		b.tool = Eraser;
+	if (QGuiApplication::keyboardModifiers() & Qt::ShiftModifier) // hold Shift for the ruler
+		b.ruler = true;
 	if (phase == 0) {
 		if (b.tool == Text) {
 			bool ok = false;
@@ -245,7 +263,6 @@ Panel::Panel(QWidget *host) : QWidget(host), dockHost(host)
 	obs_data_t *cfg = config();
 	if (obs_data_has_user_value(cfg, "color"))
 		readBrush(cfg, b);
-	loadPresets();
 
 	root = new QVBoxLayout(this);
 	root->setContentsMargins(8, 8, 8, 8);
@@ -406,6 +423,14 @@ void Panel::buildSettings()
 	};
 	check("PenPressure", &BrushState::pressure);
 	check("FillShapes", &BrushState::fill);
+	check("Ruler", &BrushState::ruler);
+	auto snap = new QCheckBox;
+	snap->setChecked(prefs().snap);
+	connect(snap, &QCheckBox::toggled, this, [](bool v) {
+		prefs().snap = v;
+		obs_data_set_bool(config(), "snap", v);
+	});
+	form->addRow(Str("SnapToGrid"), snap);
 	auto style = new QComboBox;
 	for (int i = 0; i < 3; i++)
 		style->addItem(Str(("Style." + std::to_string(i)).c_str()));
@@ -442,13 +467,11 @@ void Panel::buildSettings()
 	auto remote = new QHBoxLayout;
 	remoteOn = new QCheckBox;
 	remoteOn->setChecked(Remote::get().enabled());
-	remoteUrl = new QLineEdit(Remote::get().url());
+	remoteUrl = new QLineEdit;
 	remoteUrl->setReadOnly(true);
-	remoteUrl->setEnabled(remoteOn->isChecked());
 	connect(remoteOn, &QCheckBox::toggled, this, [this](bool on) {
 		Remote::get().setEnabled(on);
-		remoteUrl->setText(Remote::get().url());
-		remoteUrl->setEnabled(on);
+		updateRemote();
 	});
 	remote->addWidget(remoteOn);
 	remote->addWidget(remoteUrl, 1);
@@ -463,9 +486,20 @@ void Panel::buildSettings()
 	copyBtn = remoteBtn("CopyLink", [this] { QApplication::clipboard()->setText(remoteUrl->text()); });
 	regenBtn = remoteBtn("NewLink", [this] {
 		Remote::get().regenToken();
-		remoteUrl->setText(Remote::get().url());
+		updateRemote();
 	});
+	guestBtn = remoteBtn("Guests", [] {});
+	guestBtn->setPopupMode(QToolButton::InstantPopup);
+	guestBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+	guestBtn->setMenu(new QMenu(guestBtn));
+	connect(guestBtn->menu(), &QMenu::aboutToShow, this, &Panel::buildGuestMenu);
+	connect(&Remote::get(), &Remote::guestsChanged, this,
+		[this] { guestBtn->setText(QString::number(Remote::get().guests().size())); });
 	form->addRow(Str("RemoteDrawing"), remote);
+	qr = new QLabel;
+	qr->setToolTip(Str("ScanToDraw"));
+	form->addRow({}, qr);
+	updateRemote();
 
 	auto canvasRow = new QHBoxLayout;
 	auto push = [&](const char *label, auto fn) {
@@ -490,6 +524,51 @@ void Panel::buildSettings()
 	form->addRow(Str("Canvas"), canvasRow);
 }
 
+void Panel::updateRemote()
+{
+	const bool on = Remote::get().enabled();
+	remoteUrl->setText(Remote::get().url());
+	remoteUrl->setEnabled(on);
+	guestBtn->setText(QString::number(Remote::get().guests().size()));
+	qr->setVisible(on);
+	if (on)
+		qr->setPixmap(qrPixmap(remoteUrl->text()));
+	settings->adjustSize();
+}
+
+void Panel::buildGuestMenu()
+{
+	Remote &r = Remote::get();
+	QMenu *m = guestBtn->menu();
+	m->clear();
+	auto toggle = [m](const char *label, bool on, auto fn) {
+		QAction *a = m->addAction(Str(label), fn);
+		a->setCheckable(true);
+		a->setChecked(on);
+	};
+	toggle("ApproveGuests", r.approve(), [&r](bool on) { r.setPolicy(on, r.locked()); });
+	toggle("LockGuests", r.locked(), [&r](bool on) { r.setPolicy(r.approve(), on); });
+	toggle("ShowGuestNames", prefs().tags, [](bool on) {
+		prefs().tags = on;
+		obs_data_set_bool(config(), "tags", on);
+	});
+	m->addAction(Str("CopyViewLink"), [&r] { QApplication::clipboard()->setText(r.url(true)); });
+	m->addSeparator();
+	const auto guests = r.guests();
+	if (guests.empty())
+		m->addAction(Str("NoGuests"))->setEnabled(false);
+	for (auto &g : guests) {
+		QMenu *sub = m->addMenu(g.view      ? QString("%1 (%2)").arg(g.name, Str("ViewOnly"))
+					: g.allowed ? g.name
+						    : QString("%1 (%2)").arg(g.name, Str("Waiting")));
+		QAction *a = sub->addAction(Str("CanDraw"), [&r, id = g.id](bool on) { r.allow(id, on); });
+		a->setCheckable(true);
+		a->setChecked(g.allowed && !g.view);
+		a->setEnabled(!g.view);
+		sub->addAction(Str("Kick"), [&r, id = g.id] { r.kick(id); });
+	}
+}
+
 void Panel::updateIcons()
 {
 	const QColor c = palette().color(QPalette::ButtonText);
@@ -505,6 +584,7 @@ void Panel::updateIcons()
 	presetBtn->setIcon(svgIcon(PresetIcon, c));
 	copyBtn->setIcon(svgIcon(CopyIcon, c));
 	regenBtn->setIcon(svgIcon(RegenIcon, c));
+	guestBtn->setIcon(svgIcon(GuestsIcon, c));
 	syncColor();
 }
 
@@ -562,53 +642,12 @@ void Panel::action(int a)
 	});
 }
 
-void Panel::loadPresets()
-{
-	OBSDataArrayAutoRelease arr = obs_data_get_array(config(), "presets");
-	if (!arr) { // first run: a few useful defaults
-		auto add = [this](const char *name, int tool, QRgb color, float size, int style = Solid) {
-			BrushState b;
-			b.tool = tool;
-			b.color = QColor::fromRgb(color);
-			b.size = size;
-			b.style = style;
-			presets.push_back({Str(name), b});
-		};
-		add("Preset.Fineliner", Pen, 0xededed, 2);
-		add("Preset.Marker", Pen, 0xffb86b, 10);
-		add("Preset.Highlight", Highlighter, 0xffe55c, 10);
-		add("Preset.Neon", Pen, 0x7cf2c8, 6, Glow);
-		add("Preset.Dashed", Pen, 0xff7ab6, 4, Dashed);
-		add("Preset.Laser", Laser, 0xff5a5f, 6);
-		return;
-	}
-	for (size_t i = 0; i < obs_data_array_count(arr); i++) {
-		OBSDataAutoRelease d = obs_data_array_item(arr, i);
-		BrushState b;
-		readBrush(d, b);
-		presets.push_back({QString::fromUtf8(obs_data_get_string(d, "name")), b});
-	}
-}
-
-void Panel::savePresets()
-{
-	OBSDataArrayAutoRelease arr = obs_data_array_create();
-	for (auto &[name, b] : presets) {
-		OBSDataAutoRelease d = obs_data_create();
-		obs_data_set_string(d, "name", name.toUtf8().constData());
-		writeBrush(d, b);
-		obs_data_array_push_back(arr, d);
-	}
-	obs_data_set_array(config(), "presets", arr);
-	saveConfig();
-}
-
 void Panel::applyPreset(int i)
 {
-	if (i < 0 || i >= int(presets.size()))
+	if (i < 0 || i >= int(presets().size()))
 		return;
 	const QImage image = brush().image;
-	brush() = presets[size_t(i)].second;
+	brush() = presets()[size_t(i)].second;
 	brush().image = image;
 	for (auto &sync : syncers)
 		sync();
@@ -620,6 +659,7 @@ void Panel::buildPresetMenu()
 {
 	QMenu *m = presetBtn->menu();
 	m->clear();
+	auto &presets = ::presets();
 	for (int i = 0; i < int(presets.size()); i++) {
 		auto &[name, b] = presets[size_t(i)];
 		m->addAction(dotIcon(b.color), name, this, [this, i] { applyPreset(i); });
@@ -635,6 +675,7 @@ void Panel::buildPresetMenu()
 			return;
 		BrushState b = brush();
 		b.image = {};
+		auto &presets = ::presets();
 		auto it = std::find_if(presets.begin(), presets.end(), [&](auto &p) { return p.first == name; });
 		if (it != presets.end())
 			it->second = b;
@@ -645,8 +686,8 @@ void Panel::buildPresetMenu()
 	QMenu *del = m->addMenu(Str("DeletePreset"));
 	del->setEnabled(!presets.empty());
 	for (int i = 0; i < int(presets.size()); i++)
-		del->addAction(presets[size_t(i)].first, this, [this, i] {
-			presets.erase(presets.begin() + i);
+		del->addAction(presets[size_t(i)].first, this, [i] {
+			::presets().erase(::presets().begin() + i);
 			savePresets();
 		});
 }

@@ -56,8 +56,8 @@ protected:
 private:
 	void buildSettings();
 	void updateIcons();
-	void loadPresets();
-	void savePresets();
+	void updateRemote();
+	void buildGuestMenu();
 	void applyPreset(int i);
 	void buildPresetMenu();
 	void setWindowMode(bool on);
@@ -74,13 +74,13 @@ private:
 	QToolBar *toolbar = nullptr;
 	QAction *toolActs[ToolCount] = {}, *moreAct = nullptr;
 	QToolButton *undoBtn = nullptr, *redoBtn = nullptr, *clearBtn = nullptr, *popBtn = nullptr, *setBtn = nullptr,
-		    *colorBtn = nullptr, *presetBtn = nullptr, *copyBtn = nullptr, *regenBtn = nullptr;
+		    *colorBtn = nullptr, *presetBtn = nullptr, *copyBtn = nullptr, *regenBtn = nullptr,
+		    *guestBtn = nullptr;
 	QSlider *size = nullptr;
-	QLabel *sizeLbl = nullptr;
+	QLabel *sizeLbl = nullptr, *qr = nullptr;
 	QCheckBox *remoteOn = nullptr;
 	QLineEdit *remoteUrl = nullptr;
 	DrawView *view = nullptr;
 	bool more = false;
 	std::vector<std::function<void()>> syncers; // refresh controls from brush()
-	std::vector<std::pair<QString, BrushState>> presets;
 };

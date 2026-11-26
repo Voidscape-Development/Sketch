@@ -32,7 +32,8 @@ set_target_properties(
 
 target_sources(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE src/plugin-main.cpp src/canvas.cpp src/sources.cpp src/panel.cpp src/remote.cpp
+  PRIVATE src/plugin-main.cpp src/canvas.cpp src/sources.cpp src/panel.cpp src/remote.cpp deps/qrcodegen/qrcodegen.cpp
 )
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE deps/qrcodegen)
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

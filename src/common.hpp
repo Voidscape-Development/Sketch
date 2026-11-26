@@ -4,7 +4,9 @@
 #include <QColor>
 #include <QImage>
 #include <QString>
+#include <atomic>
 #include <functional>
+#include <vector>
 
 inline const char *Str(const char *key)
 {
@@ -27,6 +29,9 @@ enum Tool {
 	Pixelate,
 	Laser,
 	Image,
+	Spotlight,
+	Step,
+	Track,
 	ToolCount,
 	Clear = ToolCount
 };
@@ -44,12 +49,22 @@ struct BrushState {
 	int tool = Pen, style = Solid, stamp = 0;
 	QColor color{0x8e, 0xa6, 0xff};
 	float size = 6, opacity = 1, smoothing = .5f, fade = 0;
-	bool pressure = true, fill = false;
-	QImage image; // Image tool
+	bool pressure = true, fill = false, ruler = false; // ruler: straight lines, 15° angles, squares
+	QImage image;                                      // Image tool
 };
 BrushState &brush();
 void readBrush(obs_data_t *d, BrushState &b);
 void writeBrush(obs_data_t *d, const BrushState &b);
+
+using Preset = std::pair<QString, BrushState>;
+std::vector<Preset> &presets(); // loaded from config on first use
+void savePresets();
+
+struct Prefs {
+	std::atomic<bool> snap{false}, tags{true}; // snap shapes to the grid, show guest names on stream
+};
+Prefs &prefs();
+constexpr int GridStep = 40;
 
 // Panel actions beyond tool indices (also used by hotkeys)
 enum Action { Undo = ToolCount, Redo, ClearCanvas, FirstPreset };
