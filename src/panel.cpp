@@ -25,6 +25,7 @@
 #include <QPainter>
 #include <QPlatformSurfaceEvent>
 #include <QPushButton>
+#include <QScreen>
 #include <QSlider>
 #include <QSvgRenderer>
 #include <QTabletEvent>
@@ -278,8 +279,14 @@ Panel::Panel(QWidget *host) : QWidget(host), dockHost(host)
 			action(ClearCanvas);
 	});
 	popBtn = button("PopOut", [this] { setWindowMode(!window); });
-	setBtn = button("Settings", [this](bool on) { settings->setVisible(on); });
-	setBtn->setCheckable(true);
+	setBtn = button("Settings", [this] {
+		settings->adjustSize();
+		const QRect scr = setBtn->screen()->availableGeometry();
+		const QPoint p = setBtn->mapToGlobal(QPoint(setBtn->width() - settings->width(), setBtn->height()));
+		settings->move(std::clamp(p.x(), scr.left(), scr.right() - settings->width()),
+			       std::clamp(p.y(), scr.top(), scr.bottom() - settings->height()));
+		settings->show();
+	});
 
 	toolbar = new QToolBar;
 	toolbar->setIconSize(QSize(18, 18));
@@ -375,10 +382,13 @@ Panel::~Panel()
 
 void Panel::buildSettings()
 {
-	settings = new QWidget;
-	settings->hide();
+	auto frame = new QFrame(this, Qt::Popup); // floats over the dock instead of resizing it
+	frame->setFrameShape(QFrame::StyledPanel);
+	frame->setAttribute(Qt::WA_NoMouseReplay); // closing click (e.g. on setBtn) doesn't reopen
+	frame->setMinimumWidth(320);
+	settings = frame;
 	auto form = new QFormLayout(settings);
-	form->setContentsMargins(4, 0, 4, 0);
+	form->setContentsMargins(8, 8, 8, 8);
 	auto slider = [&](const char *label, int lo, int hi, float (*val)(), void (*fn)(int)) {
 		auto s = new QSlider(Qt::Horizontal);
 		s->setRange(lo, hi);
@@ -460,7 +470,10 @@ void Panel::buildSettings()
 	auto canvasRow = new QHBoxLayout;
 	auto push = [&](const char *label, auto fn) {
 		auto p = new QPushButton(Str(label));
-		connect(p, &QPushButton::clicked, this, fn);
+		connect(p, &QPushButton::clicked, this, [this, fn] {
+			settings->hide(); // close popup before the file dialog takes focus
+			fn();
+		});
 		canvasRow->addWidget(p);
 	};
 	push("Import", [this] {
@@ -475,7 +488,6 @@ void Panel::buildSettings()
 			withCanvas([&](Canvas *c) { c->exportImage().save(f, "PNG"); });
 	});
 	form->addRow(Str("Canvas"), canvasRow);
-	root->addWidget(settings);
 }
 
 void Panel::updateIcons()
